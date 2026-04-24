@@ -53,10 +53,10 @@ game/
 └── scenes/
     ├── start.py            # title screen
     ├── lobby.py            # navigable lobby with 3 doorways
-    └── wing.py             # generic wing scene (reused for each wing)
+    └── wing.py             # generic wing scene
 fonts/                      # typography
 music/                      # ambient + UI sfx
-assets/art/                 # optional generated hero art (procedural fallback if missing)
+assets/art/                 # optional generated hero art
 ```
 
 ## Design notes
@@ -68,8 +68,4 @@ assets/art/                 # optional generated hero art (procedural fallback i
 
 ## Content
 
-Each wing has 2–3 exhibits. Every exhibit pairs an **original performance** with one or more **reperformances**, a short curator's note, and live links to recordings. See `game/content.py` — editing that file is all that's needed to add, remove, or rewrite exhibits.
-
-## Credits
-
-Typography from the project's original `fonts/` folder: *Press Start 2P* (Codeman38), *Harukaze*, *Kashima Demo 2*. Ambient audio reused from the project's `music/` folder, renamed for this theme.
+Each wing has 2–3 exhibits. Every exhibit pairs an **original performance** with one or more **reperformances**, a short curator's note, and live links to recordings.
