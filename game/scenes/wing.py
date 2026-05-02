@@ -36,7 +36,9 @@ from ..player import Player
 from ..ui import Prompt, draw_panel, draw_wrapped, render_tracked, size_placard, truncate_to_width, wrap_text
 
 
-WALL_THICKNESS = 28
+WALL_THICKNESS = 50          # north wall depth — kept equal to side so corners are solid
+SIDE_WALL_THICKNESS = 22     # conservative east/west clamp; both wings use the same value
+SOUTH_WALL_THICKNESS = 10    # thin south clamp; exit doorway flanks are separate
 DOORWAY_WIDTH = 120
 FRAME_W = 200
 FRAME_H = 240
@@ -148,7 +150,7 @@ class WingScene:
             for i, ex in enumerate(west_exhibits):
                 cy = r.top + int((i + 1) * spacing)
                 frame = pygame.Rect(0, 0, FRAME_H, FRAME_W)
-                frame.midleft = (r.left + WALL_THICKNESS - 6, cy)
+                frame.midleft = (r.left + SIDE_WALL_THICKNESS - 6, cy)
                 approach = pygame.Rect(
                     frame.right + 6, cy - max_half,
                     APPROACH_DEPTH, max_half * 2,
@@ -161,7 +163,7 @@ class WingScene:
             for i, ex in enumerate(east_exhibits):
                 cy = r.top + int((i + 1) * spacing)
                 frame = pygame.Rect(0, 0, FRAME_H, FRAME_W)
-                frame.midright = (r.right - WALL_THICKNESS + 6, cy)
+                frame.midright = (r.right - SIDE_WALL_THICKNESS + 6, cy)
                 approach = pygame.Rect(
                     frame.left - APPROACH_DEPTH - 6, cy - max_half,
                     APPROACH_DEPTH, max_half * 2,
@@ -173,11 +175,14 @@ class WingScene:
     def _build_walls(self) -> List[pygame.Rect]:
         r = self.room
         walls: List[pygame.Rect] = []
-        # North, west, east solid
+        # North: full-width slab — the same depth as the sides so corners
+        # are completely closed and the player can't slip above it.
         walls.append(pygame.Rect(r.left, r.top, r.width, WALL_THICKNESS))
-        walls.append(pygame.Rect(r.left, r.top, WALL_THICKNESS, r.height))
-        walls.append(pygame.Rect(r.right - WALL_THICKNESS, r.top, WALL_THICKNESS, r.height))
-        # South wall with exit doorway in center
+        # East / west: run the full height of the room (north wall already
+        # blocks the top corners, south flanks handle the bottom corners).
+        walls.append(pygame.Rect(r.left, r.top, SIDE_WALL_THICKNESS, r.height))
+        walls.append(pygame.Rect(r.right - SIDE_WALL_THICKNESS, r.top, SIDE_WALL_THICKNESS, r.height))
+        # South wall: flanks around the exit doorway.
         doorway_cx = r.centerx
         south_y = r.bottom - WALL_THICKNESS
         walls.append(
@@ -191,6 +196,8 @@ class WingScene:
                 WALL_THICKNESS,
             )
         )
+        # Thin full-width clamp at very bottom edge
+        walls.append(pygame.Rect(r.left, r.bottom - SOUTH_WALL_THICKNESS, r.width, SOUTH_WALL_THICKNESS))
         return walls
 
     # ------------------------------------------------------------------
@@ -232,14 +239,21 @@ class WingScene:
             self.game.return_to_lobby()
             return
 
-        # Clamp to room bounds except through the doorway.
-        self.player.x = max(r.left + self.player.radius + 2, min(r.right - self.player.radius - 2, self.player.x))
+        pr = self.player.radius
+        # Hard clamps that back up the obstacle rects so no slide-through
+        # is possible at any corner. North uses WALL_THICKNESS; sides use
+        # SIDE_WALL_THICKNESS; south uses WALL_THICKNESS (matching flanks).
+        self.player.x = max(
+            r.left + SIDE_WALL_THICKNESS + pr,
+            min(r.right - SIDE_WALL_THICKNESS - pr, self.player.x),
+        )
+        north_min = r.top + WALL_THICKNESS + pr
         if in_doorway:
-            self.player.y = max(r.top + self.player.radius + 2, self.player.y)
+            self.player.y = max(north_min, self.player.y)
         else:
             self.player.y = max(
-                r.top + self.player.radius + 2,
-                min(r.bottom - self.player.radius - 2, self.player.y),
+                north_min,
+                min(r.bottom - WALL_THICKNESS - pr, self.player.y),
             )
 
         # Find approached exhibit. The focus trigger zone is the union of the

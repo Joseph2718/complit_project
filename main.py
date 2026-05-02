@@ -37,10 +37,10 @@ class Game:
         self.scenes = SceneManager()
         self.running = True
 
-        # Keep one LobbyScene instance across wing visits so returning to the
-        # lobby resumes the player near the doorway they came from? (The
-        # simpler behavior is to always spawn the player center-south. That's
-        # what LobbyScene does today — fine for MVP.)
+        # Player-controlled UI preferences that should persist across
+        # scene transitions (so closing the welcome card before stepping
+        # into a wing keeps it closed when the player returns).
+        self.placard_visible = True
 
         self.scenes.replace(StartScene(self))
 

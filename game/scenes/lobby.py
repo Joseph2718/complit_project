@@ -36,9 +36,21 @@ from ..player import Player
 from ..ui import Prompt, draw_panel, draw_wrapped, render_tracked, size_placard, wrap_text
 
 
-WALL_THICKNESS = 28
-DOORWAY_WIDTH = 120
-DOORWAY_HEIGHT = WALL_THICKNESS + 4
+# North wall fraction: the painted marble + vase shelf in ``lobby.png``
+# extends to ~17.5 % of the room height. Keep the collision a touch under
+# that so the player can reach the doorway carpets without being blocked.
+NORTH_WALL_FRACTION = 0.165
+SIDE_WALL_THICKNESS = 30
+SOUTH_WALL_THICKNESS = 8    # thin south clamp; lobby art has no painted south wall
+DOORWAY_WIDTH = 110
+
+# (cx_fraction, carpet_bottom_fraction) per wing, measured from the
+# painted ``lobby.png``: the teal carpet sits left and ends a touch
+# higher than the gold carpet on the right.
+DOORWAY_LAYOUTS: tuple = (
+    (0.3134, 0.238),   # teal carpet: cx 31.34 %, bottom 23.8 %
+    (0.6836, 0.238),   # gold carpet: cx 68.36 %, same vertical as teal
+)
 
 
 @dataclass
@@ -69,34 +81,41 @@ class LobbyScene:
         self.doorways: List[Doorway] = self._build_doorways()
         self.obstacles: List[pygame.Rect] = self._build_walls()
 
-        # Welcome placard: a freestanding interpretive panel near the center
-        # of the lobby, auto-sized so the thesis never clips. Kept narrower
-        # than the spacing between doorways so the player still has a clear
-        # walk-path to every wing entrance even with the placard as a solid.
-        placard_width = 560
-        placard_inner_width = placard_width - 60
-        placard_header_h = self.heading_font.get_height() + 24
+        # Welcome placard: a freestanding interpretive card. Sized to fit
+        # the thesis at a reasonable inner width and placed below the
+        # painted carpets so the wing banners stay readable.
+        placard_width = 480
+        placard_inner_width = placard_width - 56
+        placard_header_h = self.heading_font.get_height() + 18
         placard_height = size_placard(
             MUSEUM_THESIS, self.body_font, placard_inner_width,
-            header_height=placard_header_h, top_pad=12, bottom_pad=16, line_spacing=5,
+            header_height=placard_header_h, top_pad=10, bottom_pad=14, line_spacing=5,
         )
         self.placard_rect = pygame.Rect(0, 0, placard_width, placard_height)
-        # Placement: below the three doorway label plaques (which end at
-        # room.top + 240) with a clear breathing gap so Wing II's subtitle
-        # isn't clipped by the Welcome placard.
+        # Anchor the placard's top below the lowest doorway banner so it
+        # never overlaps a wing label, regardless of carpet length.
+        banner_bottom = max(d.label_rect.bottom for d in self.doorways)
         self.placard_rect.midtop = (
             self.room.centerx,
-            self.room.top + 260,
+            banner_bottom + 28,
         )
-        # The placard is deliberately NOT a collider. All three wing
-        # doorways must remain reachable by straight-line approach, so we
-        # render it as graphics only. In practice the player walks around
-        # it anyway — the visual presence does the work.
+        # Close button on the placard's top-right corner.
+        self.placard_close_rect = pygame.Rect(0, 0, 28, 28)
+        self.placard_close_rect.topright = (
+            self.placard_rect.right - 8, self.placard_rect.top + 8,
+        )
 
-        # Player spawn — center of room, south of the placard.
+        # Persisted across scene transitions: if the user closed the
+        # welcome card before stepping into a wing, it stays closed when
+        # they return. ``placard_grace`` is True at first show so the card
+        # renders fully opaque even if the player spawns inside it; it
+        # flips to False the first time the player steps off the card.
+        self.placard_visible = getattr(self.game, "placard_visible", True)
+        self.placard_grace = True
+
         self.player = Player(
             x=self.room.centerx,
-            y=self.room.bottom - 80,
+            y=self.room.bottom - 56,
         )
 
         self._prompt: Optional[Prompt] = None
@@ -106,33 +125,24 @@ class LobbyScene:
     # Geometry
     # ------------------------------------------------------------------
     def _build_doorways(self) -> List[Doorway]:
-        """Place the three clickable doorway regions over the painted doors
-        in the lobby backdrop. The backdrop (``assets/art/backdrops/lobby.png``)
-        has three colored thresholds at roughly 17% / 51% / 83% of the room
-        width; matching those positions here keeps gameplay and art aligned
-        regardless of window size."""
+        """Position doorway regions over the painted doors in
+        ``backdrops/lobby.png``. Each carpet has a slightly different
+        length, so each banner aligns to its own carpet's bottom edge."""
         r = self.room
-        # Fractions measured from the lobby backdrop's colored doorways
-        # (teal, gold, burgundy) so the clickable regions sit directly on
-        # top of the painted doors.
-        fractions = (0.169, 0.509, 0.831)
-        # Map each active wing to one of the three painted doorways in
-        # left-to-right order. If the team later removes a wing, the same
-        # fractions are still used so the remaining wings still line up.
-        slots = fractions[: len(WINGS)]
+        slots = DOORWAY_LAYOUTS[: len(WINGS)]
+        wall_depth = int(r.height * NORTH_WALL_FRACTION)
         doors: List[Doorway] = []
-        for frac, wing in zip(slots, WINGS):
-            cx = r.left + int(r.width * frac)
+        for (frac_x, carpet_frac), wing in zip(slots, WINGS):
+            cx = r.left + int(r.width * frac_x)
             trigger = pygame.Rect(
                 cx - DOORWAY_WIDTH // 2,
-                r.top - 4,
+                r.top,
                 DOORWAY_WIDTH,
-                DOORWAY_HEIGHT + 10,
+                wall_depth + 8,
             )
-            # Small engraved-sign style plaque sits just below the painted
-            # doorway — narrower than the door spacing so all three labels
-            # stay legible without overlapping.
-            label = pygame.Rect(cx - 160, r.top + 152, 320, 88)
+            # Banner top aligns with that doorway's painted carpet bottom.
+            carpet_bottom = r.top + int(r.height * carpet_frac)
+            label = pygame.Rect(cx - 150, carpet_bottom, 300, 96)
             doors.append(
                 Doorway(
                     rect=trigger,
@@ -145,30 +155,30 @@ class LobbyScene:
         return doors
 
     def _build_walls(self) -> List[pygame.Rect]:
-        """North wall broken by doorways; south/east/west walls solid."""
+        """North wall is as thick as the painted wall depth and is broken
+        only at the doorway columns. South/east/west walls are thin
+        framing walls that match the painted side trim."""
         r = self.room
         walls: List[pygame.Rect] = []
-        # South wall
-        walls.append(pygame.Rect(r.left, r.bottom - WALL_THICKNESS, r.width, WALL_THICKNESS))
-        # East wall
-        walls.append(
-            pygame.Rect(r.right - WALL_THICKNESS, r.top, WALL_THICKNESS, r.height)
-        )
-        # West wall
-        walls.append(pygame.Rect(r.left, r.top, WALL_THICKNESS, r.height))
+        wall_depth = int(r.height * NORTH_WALL_FRACTION)
 
-        # North wall with doorway gaps
+        walls.append(pygame.Rect(r.left, r.bottom - SOUTH_WALL_THICKNESS, r.width, SOUTH_WALL_THICKNESS))
+        # Side walls run the full room height: the painted shelves/furniture
+        # extends all the way to the bottom edge on both sides.
+        walls.append(pygame.Rect(r.right - SIDE_WALL_THICKNESS, r.top, SIDE_WALL_THICKNESS, r.height))
+        walls.append(pygame.Rect(r.left, r.top, SIDE_WALL_THICKNESS, r.height))
+
+        # North wall: thick slab pierced only by the doorway columns.
         segments = [r.left]
         for d in self.doorways:
             segments.append(d.rect.left)
             segments.append(d.rect.right)
         segments.append(r.right)
-        # pair up
         for i in range(0, len(segments), 2):
             x1 = segments[i]
             x2 = segments[i + 1]
             if x2 > x1:
-                walls.append(pygame.Rect(x1, r.top, x2 - x1, WALL_THICKNESS))
+                walls.append(pygame.Rect(x1, r.top, x2 - x1, wall_depth))
         return walls
 
     # ------------------------------------------------------------------
@@ -192,8 +202,18 @@ class LobbyScene:
                 if self._focused:
                     audio.play_click()
                     self.game.enter_wing(self._focused.wing_key)
+            elif event.key == pygame.K_h:
+                self.placard_visible = not self.placard_visible
+                self.placard_grace = self.placard_visible  # show fresh, no overlap dim
+                self.game.placard_visible = self.placard_visible
+                audio.play_click()
             elif event.key == pygame.K_ESCAPE:
                 self.game.confirm_quit_to_title()
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.placard_visible and self.placard_close_rect.collidepoint(event.pos):
+                self.placard_visible = False
+                self.game.placard_visible = False
+                audio.play_click()
 
     def update(self, dt: float) -> None:
         keys = pygame.key.get_pressed()
@@ -204,22 +224,37 @@ class LobbyScene:
         self.player.x = max(r.left + self.player.radius + 2, min(r.right - self.player.radius - 2, self.player.x))
         self.player.y = max(r.top + self.player.radius + 2, min(r.bottom - self.player.radius - 2, self.player.y))
 
-        # Check doorway triggers: near a doorway trigger region.
+        # First time the player steps OFF the welcome card, drop the grace
+        # period so future overlaps trigger the translucency-on-overlap.
+        if self.placard_grace and self.placard_visible:
+            if not self.placard_rect.colliderect(self.player.rect):
+                self.placard_grace = False
+
+        # Doorway focus: an approach band extending south of each doorway
+        # into the room. Standing in this band shows the "Press E" prompt
+        # for that wing.
         self._focused = None
         self._prompt = None
         prect = self.player.rect
         for d in self.doorways:
-            # proximity via expanded rect
-            approach = d.rect.inflate(0, 120)  # extends south into room
+            approach = pygame.Rect(
+                d.rect.left, d.rect.bottom, d.rect.width, 140
+            )
             if prect.colliderect(approach):
                 self._focused = d
                 self._prompt = Prompt(f"Press E to enter — {d.title}", self.prompt_font)
                 break
 
-        # If the player walks fully through the doorway region, also enter.
-        if self._focused and self.player.y < self._focused.rect.bottom + 6:
-            audio.play_click()
-            self.game.enter_wing(self._focused.wing_key)
+        # Walk-in entry: when the player advances past the south face of
+        # the wall and enters the doorway column itself, transition.
+        for d in self.doorways:
+            if (
+                d.rect.left < self.player.x < d.rect.right
+                and self.player.y < d.rect.top + d.rect.height // 2
+            ):
+                audio.play_click()
+                self.game.enter_wing(d.wing_key)
+                return
 
     # ------------------------------------------------------------------
     # Rendering
@@ -236,7 +271,8 @@ class LobbyScene:
         )
         surface.blit(title, title.get_rect(midleft=(UI_MARGIN, 39)))
         hint = self.small_font.render(
-            "WASD to walk    E to enter    Esc to step back", True, COL_MUTED
+            "WASD to walk    E to enter    H to toggle welcome    Esc to step back",
+            True, COL_MUTED,
         )
         surface.blit(hint, hint.get_rect(midright=(SCREEN_WIDTH - UI_MARGIN, 39)))
 
@@ -374,11 +410,42 @@ class LobbyScene:
             y += self.italic_font.get_height() + 1
 
     def _draw_placard(self, surface: pygame.Surface) -> None:
+        if not self.placard_visible:
+            # High-contrast pill so the toggle hint is obvious against the
+            # busy parquet floor.
+            text = "Press H to show welcome"
+            hint = self.small_font.render(text, True, COL_PAPER)
+            pad_x, pad_y = 14, 6
+            pill = pygame.Rect(0, 0, hint.get_width() + 2 * pad_x, hint.get_height() + 2 * pad_y)
+            pill.midbottom = (self.room.centerx, self.room.bottom - 8)
+            shadow = pygame.Surface(pill.size, pygame.SRCALPHA)
+            pygame.draw.rect(shadow, (0, 0, 0, 130), shadow.get_rect(), border_radius=pill.height // 2)
+            surface.blit(shadow, pill.move(0, 3).topleft)
+            pygame.draw.rect(surface, COL_INK, pill, border_radius=pill.height // 2)
+            pygame.draw.rect(surface, COL_GOLD, pill, 1, border_radius=pill.height // 2)
+            surface.blit(hint, (pill.left + pad_x, pill.top + pad_y))
+            return
+
         rect = self.placard_rect
-        draw_panel(surface, rect, bg=COL_PAPER, border=COL_INK, border_width=2, radius=6)
+        # Translucent when the player overlaps the card AFTER the grace
+        # period — i.e. the welcome screen reads cleanly on first sight,
+        # then politely steps aside if you walk back across it.
+        overlap = (
+            (not self.placard_grace)
+            and rect.colliderect(self.player.rect)
+        )
+        alpha = 150 if overlap else 245
+
+        panel = pygame.Surface(rect.size, pygame.SRCALPHA)
+        panel_bg = (*COL_PAPER, alpha)
+        pygame.draw.rect(panel, panel_bg, panel.get_rect(), border_radius=6)
+        pygame.draw.rect(panel, COL_INK, panel.get_rect(), 2, border_radius=6)
+        surface.blit(panel, rect.topleft)
+
         header = self.heading_font.render("Welcome", True, COL_INK)
+        header.set_alpha(alpha)
         surface.blit(header, header.get_rect(midtop=(rect.centerx, rect.top + 6)))
-        rule_y = rect.top + self.heading_font.get_height() + 14
+        rule_y = rect.top + self.heading_font.get_height() + 12
         pygame.draw.line(
             surface, COL_GOLD,
             (rect.left + 40, rule_y),
@@ -389,8 +456,13 @@ class LobbyScene:
             MUSEUM_THESIS,
             self.body_font,
             COL_INK_SOFT,
-            rect.left + 30,
-            rule_y + 10,
-            rect.width - 60,
+            rect.left + 28,
+            rule_y + 8,
+            rect.width - 56,
             line_spacing=5,
         )
+
+        cr = self.placard_close_rect
+        pygame.draw.rect(surface, COL_INK, cr, border_radius=4)
+        pygame.draw.line(surface, COL_PAPER, (cr.left + 7, cr.top + 7), (cr.right - 7, cr.bottom - 7), 2)
+        pygame.draw.line(surface, COL_PAPER, (cr.right - 7, cr.top + 7), (cr.left + 7, cr.bottom - 7), 2)
