@@ -1,0 +1,68 @@
+{
+  "Dancing on My Own::Robyn": {
+    "source": "deezer",
+    "deezer_track_id": 821100262,
+    "matched_title": "Dancing On My Own",
+    "matched_artist": "Robyn"
+  },
+  "Dancing on My Own::Calum Scott": {
+    "source": "deezer",
+    "deezer_track_id": 468232772,
+    "matched_title": "Dancing On My Own",
+    "matched_artist": "Calum Scott"
+  },
+  "Do I Wanna Know?::Arctic Monkeys": {
+    "source": "deezer",
+    "deezer_track_id": 70322130,
+    "matched_title": "Do I Wanna Know?",
+    "matched_artist": "Arctic Monkeys"
+  },
+  "Do I Wanna Know?::Hozier": {
+    "source": "deezer",
+    "deezer_track_id": 110963654,
+    "matched_title": "Do I Wanna Know? (BBC Live Lounge)",
+    "matched_artist": "Hozier"
+  },
+  "Wake Me Up::Aloe Blacc & Mike Einziger": {
+    "source": "deezer",
+    "deezer_track_id": 71519881,
+    "matched_title": "Wake Me Up (Acoustic)",
+    "matched_artist": "Aloe Blacc"
+  },
+  "Wake Me Up::Avicii": {
+    "source": "deezer",
+    "deezer_track_id": 70266756,
+    "matched_title": "Wake Me Up",
+    "matched_artist": "Avicii"
+  },
+  "I Will Survive::Gloria Gaynor": {
+    "source": "deezer",
+    "deezer_track_id": 975366,
+    "matched_title": "I Will Survive (Rerecorded)",
+    "matched_artist": "Gloria Gaynor"
+  },
+  "I Will Survive::LGBTQ+ communities during the AIDS crisis": {
+    "source": null,
+    "skipped": true
+  },
+  "Born in the U.S.A.::Bruce Springsteen": {
+    "source": "deezer",
+    "deezer_track_id": 15586213,
+    "matched_title": "Born in the U.S.A.",
+    "matched_artist": "Bruce Springsteen"
+  },
+  "Born in the U.S.A.::U.S. political rallies & ad campaigns": {
+    "source": null,
+    "skipped": true
+  },
+  "Dreams::Fleetwood Mac": {
+    "source": "deezer",
+    "deezer_track_id": 63480987,
+    "matched_title": "Dreams (2004 Remaster)",
+    "matched_artist": "Fleetwood Mac"
+  },
+  "Dreams::Nathan Apodaca ('Doggface208')": {
+    "source": null,
+    "skipped": true
+  }
+}

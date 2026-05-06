@@ -3,8 +3,12 @@
 Pushed on top of the wing scene. Renders a museum-style catalogue entry:
 header with cover art, summary blocks for the original performance and
 reperformance(s), the long-form analysis essay broken into sections (with
-embedded frame images), and a numbered footnote list at the end. The
-content surface is pre-composed once and then scrolled.
+embedded frame images), and a *Notes* section at the end in a simplified
+*Chicago Manual of Style* manner: source text still uses ``[1]``, ``[2]`` …
+but those render as **raised superscript numerals** at a modest point size
+(smaller than body copy, larger than our previous too-small setting) so they
+stay readable. Numbered notes with prose + URL follow below.
+The content surface is pre-composed once and then scrolled.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from typing import List, Optional, Tuple
 import pygame
 
 from .. import audio
+from .. import previews
 from ..assets import get_font, load_image
 from ..constants import (
     COL_GOLD,
@@ -32,8 +37,32 @@ from ..ui import draw_panel, render_tracked, wrap_text
 
 
 PANEL_MARGIN = 48
+
+# Video timestamps like "(1:37)" / "(12:05)" — stripped from essay body copy
+# so captions keep the frame timing; see ``strip_video_timestamp_parens``.
+_VIDEO_TS_PARENS = re.compile(r"\s*\(\d{1,2}:\d{2}\)")
+# Unicode superscripts for in-text note callouts (data still uses [1], [2]…).
+_NUM_SUPERSCRIPT = str.maketrans("0123456789", "\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079")
 LINK_COLOR = (48, 76, 140)
 CITATION_RE = re.compile(r"\[(\d+)\]")
+
+
+def strip_video_timestamp_parens(text: str) -> str:
+    """Drop parenthetical video times like ``(1:37)`` from running prose.
+
+    Image captions are not passed through here — only essay ``body`` and
+    similar paragraph fields.
+    """
+    return _VIDEO_TS_PARENS.sub("", text)
+
+
+def _cite_note_point_size(body_font: pygame.font.Font) -> int:
+    """Point size for superscript note markers: smaller than body, still legible."""
+    return max(14, body_font.get_height() - 3)
+
+
+def _superscript_note_ref(n: int) -> str:
+    return str(n).translate(_NUM_SUPERSCRIPT)
 
 
 class ExhibitScene:
@@ -73,16 +102,22 @@ class ExhibitScene:
 
         # Hitboxes in content-local coordinates: media links and citation URLs.
         self._link_hitboxes: List[Tuple[pygame.Rect, MediaLink]] = []
-        # Inline [N] markers: clicking scrolls to that citation row.
+        # Data uses [1], …; display is superscript numerals. Click scrolls to note.
         # Stored as (rect, citation_number).
         self._inline_cite_hitboxes: List[Tuple[pygame.Rect, int]] = []
-        # URL lines inside the NOTES section: clicking opens the link.
+        # URL lines inside the Notes section: clicking opens the link.
         self._citation_url_hitboxes: List[Tuple[pygame.Rect, Citation]] = []
 
-        # Citation lookup by number, and y-position of each row in NOTES.
+        # Citation lookup by number, and y-position of each row in Notes.
         self._citations_by_num = {c.number: c for c in self.exhibit.citations}
         # Populated during _build_content: maps citation number -> content-local y.
         self._citation_y: dict = {}
+
+        # Play-button anchors. Each entry is (content_local_rect, track_id).
+        # The actual button visual is rendered live each frame in
+        # ``draw()`` (since its state — idle / loading / playing — is
+        # dynamic and the content surface is composed once).
+        self._preview_anchors: List[Tuple[pygame.Rect, int]] = []
 
         self._content_surf: Optional[pygame.Surface] = None
         self._build_content()
@@ -149,23 +184,32 @@ class ExhibitScene:
             return
         cx = pos[0] - self.content_rect.left
         cy = pos[1] - self.content_rect.top + self.scroll
+        # Preview Play/Stop buttons. Active button toggles play vs stop.
+        for rect, tid in self._preview_anchors:
+            if rect.collidepoint(cx, cy):
+                if audio.preview_track_id() == tid and audio.preview_state() in ("loading", "playing"):
+                    audio.stop_preview()
+                else:
+                    audio.play_click()
+                    audio.play_preview_track(tid, volume=0.38)
+                return
         for rect, ml in self._link_hitboxes:
             if rect.collidepoint(cx, cy):
                 self._open_url(ml.url)
                 return
-        # Inline [N] marker: scroll so that citation row is visible.
+        # Superscript note callout: scroll so that note row is visible.
         for rect, num in self._inline_cite_hitboxes:
             if rect.collidepoint(cx, cy):
                 self._scroll_to_citation(num)
                 return
-        # URL line in NOTES: open the link.
+        # URL line in Notes: open the link.
         for rect, citation in self._citation_url_hitboxes:
             if rect.collidepoint(cx, cy):
                 self._open_url(citation.url)
                 return
 
     def _scroll_to_citation(self, num: int) -> None:
-        """Scroll the content so the footnote for citation ``num`` is visible."""
+        """Scroll the content so the note for reference ``num`` is visible."""
         target_y = self._citation_y.get(num)
         if target_y is None:
             return
@@ -286,8 +330,9 @@ class ExhibitScene:
             y += note_head.get_height() + 6
             pygame.draw.line(scratch, COL_GOLD, (0, y), (90, y), 2)
             y += 12
+            curator_proc = strip_video_timestamp_parens(self.exhibit.curator_note)
             y = self._draw_text_with_citations(
-                scratch, self.exhibit.curator_note, self.italic_font, COL_INK_SOFT,
+                scratch, curator_proc, self.italic_font, COL_INK_SOFT,
                 0, y, w, line_spacing=5,
             )
 
@@ -297,7 +342,7 @@ class ExhibitScene:
             pygame.draw.line(scratch, COL_GOLD_DIM, (0, y), (w, y), 1)
             y += 14
             notes_head = render_tracked(
-                self.tag_font, "NOTES", self.wing.accent, tracking=3
+                self.tag_font, "Notes", self.wing.accent, tracking=3
             )
             scratch.blit(notes_head, (0, y))
             y += notes_head.get_height() + 10
@@ -318,6 +363,16 @@ class ExhibitScene:
         head = self.section_font.render(heading, True, self.wing.accent)
         surf.blit(head, (0, y))
         year = self.small_font.render(perf.year, True, COL_MUTED)
+        # Reserve space for an inline Play button between the heading
+        # and the year, if this performance has a Deezer preview.
+        track_id = previews.track_id_for(self.exhibit.song, perf.performer)
+        btn_w, btn_h = 168, 28
+        if track_id is not None:
+            btn_x = w - year.get_width() - 12 - btn_w
+            btn_y = y + (head.get_height() - btn_h) // 2
+            self._preview_anchors.append(
+                (pygame.Rect(btn_x, btn_y, btn_w, btn_h), track_id)
+            )
         surf.blit(year, (w - year.get_width(), y + 4))
         y += head.get_height() + 2
         pygame.draw.line(surf, self.wing.accent, (0, y), (w, y), 1)
@@ -387,7 +442,7 @@ class ExhibitScene:
         y += bar_h + 8
 
         for paragraph in sec.body.split("\n\n"):
-            paragraph = paragraph.strip()
+            paragraph = strip_video_timestamp_parens(paragraph.strip())
             if not paragraph:
                 continue
             y = self._draw_text_with_citations(
@@ -432,12 +487,12 @@ class ExhibitScene:
         self, surf: pygame.Surface, text: str, font: pygame.font.Font, color,
         x: int, y: int, max_width: int, line_spacing: int = 4,
     ) -> int:
-        """Render wrapped text, interpreting ``[N]`` markers as inline
-        clickable footnote links to ``self.exhibit.citations``. Other
-        markers (without a matching citation) are rendered as the literal
-        \"[N]\" in the body color so the analysis still reads correctly.
+        """Render wrapped text: ``[N]`` in the source becomes small superscript
+        numerals (bold) that scroll to the matching Notes row. Unknown numbers
+        render as plain ``[N]`` in the body color and size.
         """
-        cite_font = get_font("body_bold", max(11, font.get_height() - 6))
+        cite_pt = _cite_note_point_size(font)
+        cite_font = get_font("body_bold", cite_pt)
         space_w = font.size(" ")[0]
         line_h = font.get_height() + line_spacing
 
@@ -455,8 +510,8 @@ class ExhibitScene:
 
         for word in words:
             # A "word" may contain a citation marker glued to surrounding
-            # punctuation, e.g. 'Summer."[1]' — split it into its parts so
-            # the marker is rendered as a styled footnote.
+            # punctuation, e.g. 'Summer."[1]' — split so the marker is styled
+            # as a bold note reference.
             parts = self._split_citation_tokens(word)
             # Render the parts as a single visual token (no internal space).
             token_w = self._measure_parts(parts, font, cite_font)
@@ -499,7 +554,11 @@ class ExhibitScene:
             if kind == "text":
                 total += font.size(value)[0]
             else:
-                total += cite_font.size(f"[{value}]")[0]
+                num = int(value)  # type: ignore[arg-type]
+                if num in self._citations_by_num:
+                    total += cite_font.size(_superscript_note_ref(num))[0]
+                else:
+                    total += font.size(f"[{num}]")[0]
         return total
 
     def _draw_part(
@@ -513,43 +572,48 @@ class ExhibitScene:
             s = font.render(value, True, color)
             surf.blit(s, (x, y))
             return x + s.get_width()
-        # Citation marker: styled as a superscript link; clicking scrolls to
-        # the matching footnote row in the NOTES section (does not open URL).
-        num = value  # type: ignore[assignment]
-        text = f"[{num}]"
+        num = int(value)  # type: ignore[arg-type]
         is_known = num in self._citations_by_num
-        marker_color = self.wing.accent if is_known else color
-        s = cite_font.render(text, True, marker_color)
-        # Slight superscript baseline shift.
-        surf.blit(s, (x, y - 2))
         if is_known:
-            rect = pygame.Rect(x, y - 2, s.get_width(), s.get_height())
+            text = _superscript_note_ref(num)
+            s = cite_font.render(text, True, self.wing.accent)
+            # Raised baseline: smaller glyph + slight lift reads as superscript.
+            lift = max(2, (font.get_height() - cite_font.get_height()) // 2)
+            y_draw = y - lift
+            surf.blit(s, (x, y_draw))
+            rect = pygame.Rect(x, y_draw, s.get_width(), s.get_height())
             self._inline_cite_hitboxes.append((rect, num))
+        else:
+            text = f"[{num}]"
+            s = font.render(text, True, color)
+            surf.blit(s, (x, y))
         return x + s.get_width()
 
     # ------------------------------------------------------------------
     def _render_citation(
         self, surf: pygame.Surface, y: int, w: int, c: Citation,
     ) -> int:
-        # Record the top of this citation row so inline [N] markers can
-        # scroll directly to it.
+        # Record the top of this note row so inline [N] markers can scroll here.
         self._citation_y[c.number] = y
 
-        # "  N.  Label  —  url"  (label in ink; url in link color, clickable)
+        # Chicago Notes, web adaptation: numbered note + prose line, then URL.
         num = self.body_bold_font.render(f"{c.number}.", True, self.wing.accent)
         num_rect = num.get_rect(topleft=(0, y))
         surf.blit(num, num_rect.topleft)
         body_x = num_rect.right + 8
 
-        label = c.label or c.url
-        label_lines = wrap_text(label, self.body_font, w - body_x)
+        raw = (c.label or c.url).strip()
+        note_prose = raw
+        if note_prose and note_prose[-1] not in ".!?":
+            note_prose += "."
+        label_lines = wrap_text(note_prose, self.body_font, w - body_x)
         cy = y
         for line in label_lines:
             ls = self.body_font.render(line, True, COL_INK)
             surf.blit(ls, (body_x, cy))
             cy += ls.get_height() + 2
 
-        # URL line, clickable, link-styled.
+        # URL block (clickable).
         url_lines = wrap_text(c.url, self.small_font, w - body_x)
         for line in url_lines:
             us = self.small_font.render(line, True, LINK_COLOR)
@@ -593,7 +657,8 @@ class ExhibitScene:
         surface.blit(wing_label, (top_bar.left, top_bar.top + 4))
 
         close_hint = self.small_font.render(
-            "Esc / B to close     1\u20139 to open links     [N] jumps to footnote     wheel or arrows to scroll",
+            "Esc / B to close   \u25b6 plays a 30s preview   1\u20139 opens link   "
+            "note refs scroll to Notes   wheel/arrows scroll",
             True, COL_MUTED,
         )
         surface.blit(close_hint, close_hint.get_rect(topright=(top_bar.right, top_bar.top + 8)))
@@ -612,9 +677,68 @@ class ExhibitScene:
                 self._content_surf,
                 (self.content_rect.left, self.content_rect.top - self.scroll),
             )
+            # Live preview-button overlay (rendered after the content so
+            # the dynamic state — Loading / 0:12 / Stop — appears above
+            # the static reserved space). Drawn within the same clip rect
+            # so a button scrolled off the panel doesn't leak.
+            self._draw_preview_buttons(surface)
             surface.set_clip(prev)
 
         self._draw_scrollbar(surface)
+
+    # ------------------------------------------------------------------
+    # Preview Play/Stop buttons (rendered live each frame)
+    # ------------------------------------------------------------------
+    def _draw_preview_buttons(self, surface: pygame.Surface) -> None:
+        state = audio.preview_state()
+        cur_tid = audio.preview_track_id()
+        elapsed, total = audio.preview_progress()
+        for content_rect, tid in self._preview_anchors:
+            screen_rect = content_rect.move(
+                self.content_rect.left,
+                self.content_rect.top - self.scroll,
+            )
+            # Skip drawing if scrolled fully outside the visible content.
+            if not screen_rect.colliderect(self.content_rect):
+                continue
+
+            is_active = (cur_tid == tid)
+            label = "\u25b6  Preview"  # ▶ Preview
+            bg = COL_PAPER
+            border = self.wing.accent
+            text_color = self.wing.accent
+            progress_frac: Optional[float] = None
+            if is_active and state == "loading":
+                label = "Loading\u2026"
+                bg = (240, 232, 215)
+            elif is_active and state == "playing":
+                # \u25a0 = ■  (Stop glyph). Show elapsed / total in 0:SS form
+                # since previews are a flat 30 s.
+                if total > 0:
+                    progress_frac = max(0.0, min(1.0, elapsed / total))
+                    label = f"\u25a0  Stop  0:{int(elapsed):02d} / 0:{int(total):02d}"
+                else:
+                    label = "\u25a0  Stop"
+                bg = self.wing.accent
+                text_color = COL_PAPER
+            elif is_active and state == "error":
+                label = "Unavailable"
+                bg = (245, 224, 215)
+                text_color = (140, 60, 50)
+
+            pygame.draw.rect(surface, bg, screen_rect, border_radius=14)
+            pygame.draw.rect(surface, border, screen_rect, width=1, border_radius=14)
+            if progress_frac is not None and progress_frac > 0:
+                # Subtle progress fill behind the text.
+                fill_rect = pygame.Rect(
+                    screen_rect.left, screen_rect.top,
+                    int(screen_rect.width * progress_frac), screen_rect.height,
+                )
+                fill = pygame.Surface((fill_rect.width, fill_rect.height), pygame.SRCALPHA)
+                fill.fill((255, 255, 255, 60))
+                surface.blit(fill, fill_rect.topleft, special_flags=0)
+            txt = self.small_font.render(label, True, text_color)
+            surface.blit(txt, txt.get_rect(center=screen_rect.center))
 
     def _draw_scrollbar(self, surface: pygame.Surface) -> None:
         if self.content_height <= self.content_rect.height:

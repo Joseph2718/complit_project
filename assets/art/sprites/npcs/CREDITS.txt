@@ -1,0 +1,15 @@
+--- LPC civilian characters (lpc_set_a/b/c.png) ---
+Universal LPC Spritesheet Character Generator
+https://github.com/gaurav0/Universal-LPC-Spritesheet-Character-Generator
+Base sprites by Redshrike / OpenGameArt contributors.
+License: CC-BY 3.0 — https://creativecommons.org/licenses/by/3.0/
+
+--- Museum visitor characters (museum_visitor_*.png) ---
+Generated original pixel art for "The Museum of Reperformance" (2026).
+Navy-blazer visitor, burgundy-dress curator, tweed-jacket professor.
+Pixel art style consistent with LPC proportions.
+License: CC0 (original work, no rights reserved).
+
+--- Mario (mario.png) ---
+Extracted from the RPG Maker Mario sprite sheet (public domain / fair use for
+educational/non-commercial work). Original SMW artwork © Nintendo.

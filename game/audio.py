@@ -6,8 +6,13 @@ elsewhere!
 
 from __future__ import annotations
 
+import json
 import os
-from typing import Dict, Optional
+import tempfile
+import threading
+import time
+import urllib.request
+from typing import Dict, Optional, Tuple
 
 import pygame
 
@@ -174,55 +179,237 @@ def play_footstep(volume: float = 0.25) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Song preview clips (optional, opt-in, strictly 1 at a time).
+# Song preview clips
+#
+# Plays 30-second MP3 previews fetched from the Deezer API. We only ever
+# store the stable Deezer track ID; the preview URL is signed and short-
+# lived, so we resolve it at click-time. The fetch + download runs on a
+# worker thread; ``poll()`` (called from the main loop) is what actually
+# starts pygame playback once the bytes have arrived. This keeps the UI
+# fully responsive even on slow connections.
 # ---------------------------------------------------------------------------
 _preview_sound: Optional[pygame.mixer.Sound] = None
+# Preview state machine. All mutations happen under _preview_lock.
+_preview_lock = threading.Lock()
+_preview_state: str = "idle"          # 'idle' | 'loading' | 'ready' | 'playing' | 'error'
+_preview_track_id: Optional[int] = None
+_preview_token: int = 0               # incremented to invalidate in-flight workers
+_preview_pending_path: Optional[str] = None  # MP3 file the worker dropped here
+_preview_pending_volume: float = 0.7
+_preview_started_at: float = 0.0       # monotonic time playback began
+_preview_length: float = 30.0          # seconds, refined once Sound is loaded
+_preview_error_message: str = ""
+_preview_pre_duck_volume: float = 0.0
 
 
-def play_preview(relpath: str, volume: float = 0.7) -> bool:
-    """Play a short audio clip (e.g. a licensed excerpt, CC0 cover, or
-    public-domain recording) on the dedicated preview channel. Any prior
-    preview is stopped first. Returns True on success."""
-    global _preview_sound
-    if not _mixer_ok:
-        return False
-    full = _path(relpath)
-    if not full:
-        return False
+def play_preview_track(track_id: int, volume: float = 0.7) -> None:
+    """Begin (or restart) playback for the given Deezer track ID.
+
+    Returns immediately. Use :func:`preview_state` and :func:`poll` to
+    drive UI updates. Calling this while a different track is loading
+    or playing cancels that one cleanly.
+    """
+    if not _mixer_ok or not isinstance(track_id, int):
+        return
+    global _preview_state, _preview_track_id, _preview_token, _preview_error_message
+    with _preview_lock:
+        # Cancel any in-flight worker by bumping the token.
+        _preview_token += 1
+        token = _preview_token
+        _preview_state = "loading"
+        _preview_track_id = track_id
+        _preview_error_message = ""
+    # Stop any current playback synchronously.
+    _stop_playback_internal()
+    # Hand off to a worker so the UI thread never blocks on the network.
+    t = threading.Thread(
+        target=_preview_worker,
+        args=(track_id, token, volume),
+        daemon=True,
+    )
+    t.start()
+
+
+def _preview_worker(track_id: int, token: int, volume: float) -> None:
+    """Resolve a fresh preview URL via the Deezer track endpoint, then
+    download the MP3 to a temp file and hand off to the main thread."""
+    global _preview_state, _preview_pending_path, _preview_pending_volume, _preview_error_message
     try:
-        snd = pygame.mixer.Sound(full)
-    except pygame.error:
-        return False
-    stop_preview()
-    _preview_sound = snd
-    ch = pygame.mixer.Channel(CHANNEL_SONG_PREVIEW)
-    ch.stop()
-    ch.set_volume(volume)
-    ch.play(snd)
-    # Duck music while preview plays.
-    set_music_volume(max(0.06, _music_volume * 0.25))
-    return True
+        meta_url = f"https://api.deezer.com/track/{track_id}"
+        req = urllib.request.Request(
+            meta_url,
+            headers={"User-Agent": "MuseumOfReperformance/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            track = json.loads(resp.read().decode("utf-8"))
+        url = track.get("preview")
+        if not url:
+            raise RuntimeError("track has no preview")
+        # Short-circuit if user already cancelled.
+        with _preview_lock:
+            if token != _preview_token:
+                return
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = resp.read()
+        fd, path = tempfile.mkstemp(suffix=".mp3", prefix="preview_")
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+    except Exception as exc:
+        with _preview_lock:
+            if token != _preview_token:
+                return
+            _preview_state = "error"
+            _preview_error_message = str(exc)
+        return
+
+    with _preview_lock:
+        if token != _preview_token:
+            # User changed their mind; throw away the file.
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            return
+        _preview_pending_path = path
+        _preview_pending_volume = volume
+        _preview_state = "ready"
+
+
+def poll() -> None:
+    """Called every frame from the main loop. Promotes a downloaded
+    preview to actual playback (must happen on the main thread because
+    pygame.mixer is not thread-safe for some platforms) and detects
+    natural end-of-clip so the UI flips back to idle."""
+    if not _mixer_ok:
+        return
+    global _preview_state, _preview_pending_path, _preview_sound, _preview_started_at, _preview_length
+    with _preview_lock:
+        state = _preview_state
+        pending = _preview_pending_path
+        volume = _preview_pending_volume
+        # We'll consume the pending entry below.
+        if state == "ready":
+            _preview_pending_path = None
+    if state == "ready" and pending:
+        try:
+            snd = pygame.mixer.Sound(pending)
+        except pygame.error as exc:
+            with _preview_lock:
+                _preview_state = "error"
+            try:
+                os.unlink(pending)
+            except OSError:
+                pass
+            return
+        _preview_sound = snd
+        _preview_length = max(1.0, snd.get_length())
+        ch = pygame.mixer.Channel(CHANNEL_SONG_PREVIEW)
+        ch.stop()
+        ch.set_volume(volume)
+        ch.play(snd)
+        _duck_music()
+        _preview_started_at = time.monotonic()
+        # Schedule cleanup of the temp file: it has to outlive the Sound
+        # while it's playing, so we delete it on the next stop instead.
+        _preview_pending_path = pending  # repurposed as "current temp"
+        with _preview_lock:
+            _preview_state = "playing"
+            _preview_pending_path = pending
+        return
+
+    if state == "playing":
+        ch = pygame.mixer.Channel(CHANNEL_SONG_PREVIEW)
+        if not ch.get_busy():
+            # Natural end of clip.
+            stop_preview()
 
 
 def stop_preview() -> None:
-    """Stop any playing preview and un-duck the music."""
-    global _preview_sound
+    """Stop any playing or pending preview and un-duck music."""
     if not _mixer_ok:
         return
-    ch = pygame.mixer.Channel(CHANNEL_SONG_PREVIEW)
-    ch.stop()
-    _preview_sound = None
-    # Restore music volume to whatever scene last set it to.
+    global _preview_state, _preview_track_id, _preview_token, _preview_error_message
+    _stop_playback_internal()
+    with _preview_lock:
+        _preview_token += 1  # cancel any in-flight worker
+        _preview_state = "idle"
+        _preview_track_id = None
+        _preview_error_message = ""
+
+
+def _stop_playback_internal() -> None:
+    """Stop the channel and clean up any temp MP3 we wrote."""
+    global _preview_sound, _preview_pending_path
     try:
-        pygame.mixer.music.set_volume(_music_volume)
+        ch = pygame.mixer.Channel(CHANNEL_SONG_PREVIEW)
+        ch.stop()
+    except pygame.error:
+        pass
+    _preview_sound = None
+    _unduck_music()
+    with _preview_lock:
+        path = _preview_pending_path
+        _preview_pending_path = None
+    if path:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def _duck_music() -> None:
+    """Drop ambient music to a quieter background level while a preview
+    plays. Using 0.30 keeps it perceptibly present without competing."""
+    global _preview_pre_duck_volume
+    _preview_pre_duck_volume = _music_volume
+    try:
+        pygame.mixer.music.set_volume(max(0.05, _music_volume * 0.30))
     except pygame.error:
         pass
 
 
+def _unduck_music() -> None:
+    """Restore ambient music to whatever it was before ducking."""
+    if _preview_pre_duck_volume <= 0:
+        return
+    try:
+        pygame.mixer.music.set_volume(_preview_pre_duck_volume)
+    except pygame.error:
+        pass
+
+
+def preview_state() -> str:
+    """One of 'idle' | 'loading' | 'playing' | 'error'.
+
+    'ready' is a transient internal state that flips to 'playing' on the
+    next ``poll()``; we collapse it to 'loading' for UI purposes since
+    the user shouldn't see a frame of "ready but silent"."""
+    with _preview_lock:
+        s = _preview_state
+    return "loading" if s == "ready" else s
+
+
+def preview_track_id() -> Optional[int]:
+    with _preview_lock:
+        return _preview_track_id
+
+
+def preview_progress() -> Tuple[float, float]:
+    """``(elapsed_seconds, total_seconds)`` for whatever's currently
+    playing. Returns ``(0.0, 0.0)`` if not playing."""
+    if preview_state() != "playing":
+        return (0.0, 0.0)
+    elapsed = max(0.0, time.monotonic() - _preview_started_at)
+    return (min(elapsed, _preview_length), _preview_length)
+
+
+def preview_error_message() -> str:
+    with _preview_lock:
+        return _preview_error_message
+
+
 def preview_is_playing() -> bool:
-    if not _mixer_ok:
-        return False
-    return pygame.mixer.Channel(CHANNEL_SONG_PREVIEW).get_busy()
+    return preview_state() == "playing"
 
 
 def shutdown() -> None:

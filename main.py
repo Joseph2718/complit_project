@@ -33,6 +33,11 @@ class Game:
 
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
         pygame.display.set_caption(TITLE)
+        # SDL activates the macOS Input Method Engine (IME) automatically on
+        # window creation, which triggers an IMK console message. The game
+        # uses key events only — no text input — so deactivating IME here
+        # prevents the warning on all macOS versions without touching stderr.
+        pygame.key.stop_text_input()
         self.clock = pygame.time.Clock()
         self.scenes = SceneManager()
         self.running = True
@@ -60,6 +65,9 @@ class Game:
         self.scenes.push(ExhibitScene(self, exhibit, wing))
 
     def close_exhibit(self) -> None:
+        # Always stop any in-flight song preview when the panel closes —
+        # the player has no way to control playback from the wing scene.
+        audio.stop_preview()
         self.scenes.pop()
 
     def confirm_quit_to_title(self) -> None:
@@ -78,6 +86,7 @@ class Game:
 
             if not self.running:
                 break
+            audio.poll()
             self.scenes.update(dt)
             self.scenes.draw(self.screen)
             pygame.display.flip()

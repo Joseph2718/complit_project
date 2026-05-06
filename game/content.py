@@ -49,8 +49,13 @@ class Performance:
 
 @dataclass(frozen=True)
 class Citation:
-    """Footnoted source. ``number`` is the in-text superscript marker
-    used by the body copy (e.g. 1, 2, 3 …)."""
+    """Footnoted source for Chicago *Notes* style (CMOS 17).
+
+    ``number`` matches the in-text note reference (superscript ``¹``, ``²``, …
+    in the exhibit; data is still written as ``[1]``, ``[2]``). Each entry becomes
+    one numbered note with prose line plus URL — a light web adaptation of full
+    Chicago note form.
+    """
 
     number: int
     url: str
@@ -60,10 +65,14 @@ class Citation:
 @dataclass(frozen=True)
 class EssaySection:
     """A formatted section of an exhibit's analysis. Bodies may contain
-    paragraph breaks ("\\n\\n") and inline footnote markers ("[1]", "[2]"…)
-    that map to the exhibit's ``citations`` tuple. ``image`` is an optional
-    illustration filename (relative to ``assets/art/``) for the section's
-    Frame image."""
+    paragraph breaks (``\\n\\n``) and Chicago-style source markers written in
+    the data as ``[1]``, ``[2]`` … which render as raised superscript numerals
+    (modest type size) and map to the exhibit's ``citations`` tuple. ``image`` is an optional illustration
+    filename (relative to ``assets/art/``) for the section's frame image.
+    ``image_caption`` may retain video timestamps (e.g. ``1:37``); running
+    prose in ``body`` has parenthetical timestamps like ``(1:37)`` stripped
+    at display time so captions carry the timing.
+    """
 
     heading: str
     body: str
@@ -127,7 +136,7 @@ DANCING_ON_MY_OWN_ESSAY: Tuple[EssaySection, ...] = (
             "Furthermore, her outfit seems like clubwear, but no one else is around to see it. "
             "The result is a frame that holds two feelings simultaneously: the ache of being "
             "abandoned on a dancefloor, but also the strange freedom of having that dancefloor "
-            "entirely to oneself without the need to perform for others. (1:37)"
+            "entirely to oneself without the need to perform for others."
         ),
         image="exhibits/frames/dancing_robyn.png",
         image_caption="Robyn \u2014 \u201cDancing on My Own\u201d (2010), 1:37",
@@ -170,7 +179,7 @@ DANCING_ON_MY_OWN_ESSAY: Tuple[EssaySection, ...] = (
             "feeling. The scene inverts Robyn\u2019s loneliness as her portrayal was of being alone "
             "in a space built for crowds, while Scott\u2019s is the feeling of being alone within a "
             "crowd. The ache of unrequited longing is amplified here is the invisibility of "
-            "standing in a room full of people. (2:08)"
+            "standing in a room full of people."
         ),
         image="exhibits/frames/dancing_calum.png",
         image_caption="Calum Scott \u2014 \u201cDancing on My Own\u201d (2016), 2:08",

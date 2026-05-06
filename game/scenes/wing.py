@@ -32,6 +32,8 @@ from ..constants import (
     UI_MARGIN,
 )
 from ..content import Exhibit, Wing, wing_by_key
+from .. import npc as npc_mod
+from .. import npc_sprite
 from ..player import Player
 from ..ui import Prompt, draw_panel, draw_wrapped, render_tracked, size_placard, truncate_to_width, wrap_text
 
@@ -97,6 +99,39 @@ class WingScene:
             x=self.room.centerx,
             y=self.room.bottom - 160,
             facing=(0, -1),
+        )
+
+        # Ambient NPCs roam the open floor of the gallery. The upper
+        # boundary is set just below the exhibit frames (NOT below the
+        # approach rects, which are player-only trigger zones with no
+        # physical obstacle). The lower boundary clears the exit doorway.
+        if self.mounts:
+            frame_bottom = max(m.frame_rect.bottom for m in self.mounts)
+        else:
+            frame_bottom = self.room.top + WALL_THICKNESS + FRAME_H
+        npc_top = frame_bottom + 30
+        # South flanks start at room.bottom - WALL_THICKNESS (50); leave
+        # another 20px so NPCs don't crowd the doorway arch.
+        npc_bottom = self.room.bottom - WALL_THICKNESS - 20
+        npc_left = self.room.left + SIDE_WALL_THICKNESS + 30
+        npc_right = self.room.right - SIDE_WALL_THICKNESS - 30
+        self.npc_walkable = pygame.Rect(
+            npc_left, npc_top, npc_right - npc_left, max(80, npc_bottom - npc_top)
+        )
+        # Keep gallery quieter than the lobby — 2 visitors per wing.
+        rng = __import__("random").Random(hash(wing_key) & 0xFFFF)
+        pool = list(npc_sprite.GENERIC_NPCS)
+        rng.shuffle(pool)
+        configs = pool[:2]
+        # Only block NPCs with physical walls + a small buffer around the
+        # exhibit frames themselves. Approach rects are player triggers,
+        # not walls — keeping them out of npc_obstacles gives the NPCs
+        # much more natural roaming space.
+        frame_rects = [m.frame_rect.inflate(16, 16) for m in self.mounts]
+        npc_obstacles = list(self.obstacles) + frame_rects
+        self.npcs = npc_mod.populate(
+            self.npc_walkable, configs, npc_obstacles,
+            seed=hash(wing_key) & 0xFFFF, min_separation=80,
         )
 
         self._focused: Optional[ExhibitMount] = None
@@ -228,6 +263,13 @@ class WingScene:
         keys = pygame.key.get_pressed()
         self.player.update(dt, keys, self.obstacles)
 
+        # Ambient NPCs: physical walls + buffered frame rects + player.
+        # Approach rects are player-only trigger zones, not physical walls.
+        frame_rects = [m.frame_rect.inflate(16, 16) for m in self.mounts]
+        npc_obstacles = list(self.obstacles) + frame_rects + [self.player.rect.inflate(8, 8)]
+        for n in self.npcs:
+            n.update(dt, npc_obstacles)
+
         r = self.room
         # Walk-through exit: if the player is inside the doorway gap and has
         # moved below the top of the south wall, send them back to the lobby.
@@ -317,7 +359,11 @@ class WingScene:
         self._draw_thesis_strip(surface)
         self._draw_exhibit_frames(surface)
 
-        self.player.draw(surface)
+        # Player + NPCs in y-order so foreground/background depth reads.
+        actors = sorted([("p", self.player)] + [("n", n) for n in self.npcs],
+                         key=lambda a: a[1].y)
+        for _, a in actors:
+            a.draw(surface)
 
         if self._prompt:
             # Anchor above the focused frame's title plaque (clearly tied

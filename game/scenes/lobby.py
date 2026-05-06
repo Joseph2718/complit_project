@@ -32,6 +32,8 @@ from ..constants import (
     UI_MARGIN,
 )
 from ..content import MUSEUM_THESIS, WINGS
+from .. import npc as npc_mod
+from .. import npc_sprite
 from ..player import Player
 from ..ui import Prompt, draw_panel, draw_wrapped, render_tracked, size_placard, wrap_text
 
@@ -116,6 +118,30 @@ class LobbyScene:
         self.player = Player(
             x=self.room.centerx,
             y=self.room.bottom - 56,
+        )
+
+        # Ambient NPCs wandering the lobby. Their walkable rect avoids
+        # the doorway columns (so they never accidentally enter a wing)
+        # and the thick north wall band, leaving the open central /
+        # southern floor for them to roam.
+        wall_depth = int(self.room.height * NORTH_WALL_FRACTION)
+        self.npc_walkable = pygame.Rect(
+            self.room.left + SIDE_WALL_THICKNESS + 32,
+            self.room.top + wall_depth + 60,
+            self.room.width - 2 * SIDE_WALL_THICKNESS - 64,
+            self.room.height - wall_depth - SOUTH_WALL_THICKNESS - 80,
+        )
+        # 5 generic LPC visitors plus Mario as a one-of-a-kind cameo.
+        rng = __import__("random").Random(7)
+        generic_pool = list(npc_sprite.GENERIC_NPCS)
+        rng.shuffle(generic_pool)
+        configs = generic_pool[:5] + [npc_sprite.MARIO]
+        # Exclude the welcome placard area from initial spawn so NPCs
+        # don't appear on top of the card. At runtime _npc_obstacles()
+        # keeps them out of the placard zone when it's visible.
+        spawn_obstacles = list(self.obstacles) + [self.placard_rect.inflate(24, 24)]
+        self.npcs = npc_mod.populate(
+            self.npc_walkable, configs, spawn_obstacles, seed=11,
         )
 
         self._prompt: Optional[Prompt] = None
@@ -219,6 +245,15 @@ class LobbyScene:
         keys = pygame.key.get_pressed()
         self.player.update(dt, keys, self.obstacles)
 
+        # Ambient NPCs roam independently. Player and (when visible) the
+        # welcome placard are treated as soft obstacles.
+        player_block = self.player.rect.inflate(8, 8)
+        extra = [player_block]
+        if self.placard_visible:
+            extra.append(self.placard_rect.inflate(16, 16))
+        for n in self.npcs:
+            n.update(dt, list(self.obstacles) + extra)
+
         # keep player inside the room (in case of teleport spawns)
         r = self.room
         self.player.x = max(r.left + self.player.radius + 2, min(r.right - self.player.radius - 2, self.player.x))
@@ -289,8 +324,12 @@ class LobbyScene:
         # Welcome placard (on south wall, inside the room)
         self._draw_placard(surface)
 
-        # Player
-        self.player.draw(surface)
+        # Ambient NPCs draw in y-order with the player so foreground /
+        # background depth reads correctly when they're near each other.
+        actors = sorted([("p", self.player)] + [("n", n) for n in self.npcs],
+                         key=lambda a: a[1].y)
+        for _, a in actors:
+            a.draw(surface)
 
         # Prompt anchored above the focused doorway plaque, not the player.
         if self._prompt:
