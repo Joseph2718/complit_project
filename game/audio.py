@@ -193,6 +193,11 @@ _preview_sound: Optional[pygame.mixer.Sound] = None
 _preview_lock = threading.Lock()
 _preview_state: str = "idle"          # 'idle' | 'loading' | 'ready' | 'playing' | 'error'
 _preview_track_id: Optional[int] = None
+# Unique identifier for the currently active preview (whether loading,
+# ready, or playing). For Deezer previews this is f"deezer:{track_id}";
+# for local files it's f"local:{path}". UI uses this to tell apart
+# which Play/Stop button is the active one across exhibits.
+_preview_id: Optional[str] = None
 _preview_token: int = 0               # incremented to invalidate in-flight workers
 _preview_pending_path: Optional[str] = None  # MP3 file the worker dropped here
 _preview_pending_volume: float = 0.7
@@ -211,13 +216,13 @@ def play_preview_track(track_id: int, volume: float = 0.7) -> None:
     """
     if not _mixer_ok or not isinstance(track_id, int):
         return
-    global _preview_state, _preview_track_id, _preview_token, _preview_error_message
+    global _preview_state, _preview_track_id, _preview_id, _preview_token, _preview_error_message
     with _preview_lock:
-        # Cancel any in-flight worker by bumping the token.
         _preview_token += 1
         token = _preview_token
         _preview_state = "loading"
         _preview_track_id = track_id
+        _preview_id = f"deezer:{track_id}"
         _preview_error_message = ""
     # Stop any current playback synchronously.
     _stop_playback_internal()
@@ -228,6 +233,43 @@ def play_preview_track(track_id: int, volume: float = 0.7) -> None:
         daemon=True,
     )
     t.start()
+
+
+def play_local_preview(path: str, volume: float = 0.7) -> None:
+    """Play a local MP3 file as a preview, capped at 30 seconds.
+
+    Drops straight to 'playing' state — no network worker needed.
+    The 30s cutoff is enforced in ``poll()``.
+    """
+    if not _mixer_ok:
+        return
+    global _preview_state, _preview_track_id, _preview_id, _preview_token, _preview_error_message
+    global _preview_sound, _preview_started_at, _preview_length, _preview_pending_path
+    with _preview_lock:
+        _preview_token += 1
+        _preview_state = "loading"
+        _preview_track_id = None
+        _preview_id = f"local:{path}"
+        _preview_error_message = ""
+    _stop_playback_internal()
+    try:
+        snd = pygame.mixer.Sound(path)
+    except pygame.error as exc:
+        with _preview_lock:
+            _preview_state = "error"
+            _preview_error_message = str(exc)
+        return
+    _preview_sound = snd
+    _preview_length = min(snd.get_length(), 30.0)
+    ch = pygame.mixer.Channel(CHANNEL_SONG_PREVIEW)
+    ch.stop()
+    ch.set_volume(volume)
+    ch.play(snd)
+    _duck_music()
+    _preview_started_at = time.monotonic()
+    _preview_pending_path = None
+    with _preview_lock:
+        _preview_state = "playing"
 
 
 def _preview_worker(track_id: int, token: int, volume: float) -> None:
@@ -319,8 +361,8 @@ def poll() -> None:
 
     if state == "playing":
         ch = pygame.mixer.Channel(CHANNEL_SONG_PREVIEW)
-        if not ch.get_busy():
-            # Natural end of clip.
+        elapsed = time.monotonic() - _preview_started_at
+        if not ch.get_busy() or elapsed >= 30.0:
             stop_preview()
 
 
@@ -328,12 +370,13 @@ def stop_preview() -> None:
     """Stop any playing or pending preview and un-duck music."""
     if not _mixer_ok:
         return
-    global _preview_state, _preview_track_id, _preview_token, _preview_error_message
+    global _preview_state, _preview_track_id, _preview_id, _preview_token, _preview_error_message
     _stop_playback_internal()
     with _preview_lock:
-        _preview_token += 1  # cancel any in-flight worker
+        _preview_token += 1
         _preview_state = "idle"
         _preview_track_id = None
+        _preview_id = None
         _preview_error_message = ""
 
 
@@ -392,6 +435,17 @@ def preview_state() -> str:
 def preview_track_id() -> Optional[int]:
     with _preview_lock:
         return _preview_track_id
+
+
+def preview_id() -> Optional[str]:
+    """Stable identifier for whatever preview is currently active.
+
+    Returns ``"deezer:<id>"`` for Deezer previews, ``"local:<path>"``
+    for local files, or ``None`` when nothing is active. UI uses this
+    to pick which Play/Stop button is the active one.
+    """
+    with _preview_lock:
+        return _preview_id
 
 
 def preview_progress() -> Tuple[float, float]:

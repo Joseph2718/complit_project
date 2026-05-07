@@ -45,6 +45,11 @@ _VIDEO_TS_PARENS = re.compile(r"\s*\(\d{1,2}:\d{2}\)")
 _NUM_SUPERSCRIPT = str.maketrans("0123456789", "\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079")
 LINK_COLOR = (48, 76, 140)
 CITATION_RE = re.compile(r"\[(\d+)\]")
+# White-heart emoji (U+1F90D) — Cormorant Garamond has no glyph for
+# this codepoint, so we tokenize it and draw a small vector heart in
+# its place. ``HEART_CHARS`` lists every codepoint we substitute.
+HEART_CHARS = ("\U0001f90d",)
+_HEART_RE = re.compile("|".join(re.escape(c) for c in HEART_CHARS))
 
 
 def strip_video_timestamp_parens(text: str) -> str:
@@ -57,8 +62,7 @@ def strip_video_timestamp_parens(text: str) -> str:
 
 
 def _cite_note_point_size(body_font: pygame.font.Font) -> int:
-    """Point size for superscript note markers: smaller than body, still legible."""
-    return max(14, body_font.get_height() - 3)
+    return max(16, body_font.get_height())
 
 
 def _superscript_note_ref(n: int) -> str:
@@ -94,6 +98,13 @@ class ExhibitScene:
         self.content_rect.top = self.panel_rect.top + 100
         self.content_rect.height = self.panel_rect.height - 160
 
+        # X close button anchored to the panel's top-right corner.
+        # Always reachable; companions Esc and B already close the panel.
+        self.close_rect = pygame.Rect(0, 0, 30, 30)
+        self.close_rect.topright = (
+            self.panel_rect.right - 14, self.panel_rect.top + 14,
+        )
+
         # Ordered media links, used for numeric hotkeys (1..9).
         self._links: List[MediaLink] = []
         for perf in (self.exhibit.original,) + self.exhibit.reperformances:
@@ -117,7 +128,7 @@ class ExhibitScene:
         # The actual button visual is rendered live each frame in
         # ``draw()`` (since its state — idle / loading / playing — is
         # dynamic and the content surface is composed once).
-        self._preview_anchors: List[Tuple[pygame.Rect, int]] = []
+        self._preview_anchors: List[Tuple] = []
 
         self._content_surf: Optional[pygame.Surface] = None
         self._build_content()
@@ -163,6 +174,12 @@ class ExhibitScene:
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll = max(0, min(self._max_scroll(), self.scroll - event.y * 50))
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            # The X close button lives outside the scrolled content rect,
+            # so it gets a top-priority hit-test before regular clicks.
+            if self.close_rect.collidepoint(event.pos):
+                audio.play_click()
+                self.game.close_exhibit()
+                return
             self._check_clicks(event.pos)
 
     def update(self, dt: float) -> None:
@@ -184,14 +201,19 @@ class ExhibitScene:
             return
         cx = pos[0] - self.content_rect.left
         cy = pos[1] - self.content_rect.top + self.scroll
-        # Preview Play/Stop buttons. Active button toggles play vs stop.
-        for rect, tid in self._preview_anchors:
+        # Preview Play/Stop buttons.
+        for rect, tid, local, my_id in self._preview_anchors:
             if rect.collidepoint(cx, cy):
-                if audio.preview_track_id() == tid and audio.preview_state() in ("loading", "playing"):
+                active = audio.preview_state() in ("loading", "playing")
+                is_mine = audio.preview_id() == my_id
+                if active and is_mine:
                     audio.stop_preview()
                 else:
                     audio.play_click()
-                    audio.play_preview_track(tid, volume=0.38)
+                    if local:
+                        audio.play_local_preview(local, volume=0.38)
+                    else:
+                        audio.play_preview_track(tid, volume=0.38)
                 return
         for rect, ml in self._link_hitboxes:
             if rect.collidepoint(cx, cy):
@@ -244,12 +266,17 @@ class ExhibitScene:
         cover_size = 168
         title_left = 0
         if cover is not None:
-            scaled = pygame.transform.smoothscale(cover, (cover_size, cover_size))
-            pygame.draw.rect(
-                scratch, (42, 30, 22),
-                (0, y - 2, cover_size + 4, cover_size + 4),
-            )
-            scratch.blit(scaled, (2, y))
+            iw, ih = cover.get_size()
+            scale = max(cover_size / iw, cover_size / ih)
+            sw, sh = max(1, int(iw * scale)), max(1, int(ih * scale))
+            scaled = pygame.transform.smoothscale(cover, (sw, sh))
+            cover_rect = pygame.Rect(2, y, cover_size, cover_size)
+            pygame.draw.rect(scratch, (42, 30, 22),
+                             (0, y - 2, cover_size + 4, cover_size + 4))
+            prev_clip = scratch.get_clip()
+            scratch.set_clip(cover_rect)
+            scratch.blit(scaled, scaled.get_rect(center=cover_rect.center))
+            scratch.set_clip(prev_clip)
             title_left = cover_size + 28
 
         # Big song title; downscale font if it would overflow.
@@ -363,15 +390,19 @@ class ExhibitScene:
         head = self.section_font.render(heading, True, self.wing.accent)
         surf.blit(head, (0, y))
         year = self.small_font.render(perf.year, True, COL_MUTED)
-        # Reserve space for an inline Play button between the heading
-        # and the year, if this performance has a Deezer preview.
         track_id = previews.track_id_for(self.exhibit.song, perf.performer)
+        local_path = previews.local_path_for(self.exhibit.song, perf.performer)
         btn_w, btn_h = 168, 28
-        if track_id is not None:
+        if track_id is not None or local_path is not None:
             btn_x = w - year.get_width() - 12 - btn_w
             btn_y = y + (head.get_height() - btn_h) // 2
+            preview_uid = (
+                f"local:{local_path}" if local_path is not None
+                else f"deezer:{track_id}"
+            )
             self._preview_anchors.append(
-                (pygame.Rect(btn_x, btn_y, btn_w, btn_h), track_id)
+                (pygame.Rect(btn_x, btn_y, btn_w, btn_h),
+                 track_id, local_path, preview_uid)
             )
         surf.blit(year, (w - year.get_width(), y + 4))
         y += head.get_height() + 2
@@ -387,6 +418,22 @@ class ExhibitScene:
         y = self._draw_label_value(
             surf, "Register", perf.register, 0, y, w
         )
+        # If the play button is a substitute (cover not on Deezer / shared
+        # audio), explain that just below the performer line so the player
+        # is never misled about what they're hearing.
+        sub = previews.substitute_kind(self.exhibit.song, perf.performer)
+        if (track_id is not None or local_path is not None) and sub and local_path is None:
+            tag_text = (
+                "Preview plays the same audio (no second recording)."
+                if sub == "same_audio"
+                else "Preview plays the original recording \u2014 this cover isn\u2019t on Deezer."
+            )
+            for line in wrap_text(tag_text, self.italic_font, w):
+                ts = self.italic_font.render(line, True, COL_MUTED)
+                surf.blit(ts, (0, y))
+                y += ts.get_height() + 1
+            y += 2
+
         if perf.media:
             y += 8
             for ml in perf.media:
@@ -532,17 +579,31 @@ class ExhibitScene:
 
     def _split_citation_tokens(self, word: str) -> List[Tuple[str, object]]:
         """Split a whitespace-delimited word into a list of typed pieces:
-        ('text', str) or ('cite', int). Punctuation glued around a marker
-        stays in its own 'text' piece."""
+        ('text', str), ('cite', int), or ('heart', None). Punctuation
+        glued around a marker stays in its own 'text' piece."""
         out: List[Tuple[str, object]] = []
+
+        # First split out heart codepoints (no font glyph; drawn vector).
+        def split_hearts(s: str) -> List[Tuple[str, object]]:
+            pieces: List[Tuple[str, object]] = []
+            i = 0
+            for m in _HEART_RE.finditer(s):
+                if m.start() > i:
+                    pieces.append(("text", s[i:m.start()]))
+                pieces.append(("heart", None))
+                i = m.end()
+            if i < len(s):
+                pieces.append(("text", s[i:]))
+            return pieces
+
         i = 0
         for m in CITATION_RE.finditer(word):
             if m.start() > i:
-                out.append(("text", word[i:m.start()]))
+                out.extend(split_hearts(word[i:m.start()]))
             out.append(("cite", int(m.group(1))))
             i = m.end()
         if i < len(word):
-            out.append(("text", word[i:]))
+            out.extend(split_hearts(word[i:]))
         return out
 
     def _measure_parts(
@@ -553,6 +614,8 @@ class ExhibitScene:
         for kind, value in parts:
             if kind == "text":
                 total += font.size(value)[0]
+            elif kind == "heart":
+                total += self._heart_width(font)
             else:
                 num = int(value)  # type: ignore[arg-type]
                 if num in self._citations_by_num:
@@ -560,6 +623,12 @@ class ExhibitScene:
                 else:
                     total += font.size(f"[{num}]")[0]
         return total
+
+    @staticmethod
+    def _heart_width(font: pygame.font.Font) -> int:
+        # Slightly wider than an em so the heart sits on its own little
+        # cushion, matching emoji metrics in surrounding system fonts.
+        return int(font.get_height() * 0.85)
 
     def _draw_part(
         self, surf: pygame.Surface,
@@ -572,13 +641,17 @@ class ExhibitScene:
             s = font.render(value, True, color)
             surf.blit(s, (x, y))
             return x + s.get_width()
+        if kind == "heart":
+            w = self._heart_width(font)
+            self._draw_white_heart(surf, x, y, font.get_height(), w)
+            return x + w
         num = int(value)  # type: ignore[arg-type]
         is_known = num in self._citations_by_num
         if is_known:
             text = _superscript_note_ref(num)
             s = cite_font.render(text, True, self.wing.accent)
-            # Raised baseline: smaller glyph + slight lift reads as superscript.
-            lift = max(2, (font.get_height() - cite_font.get_height()) // 2)
+            # Raise by about 1/3 of the line height so it reads clearly as a superscript.
+            lift = max(4, font.get_height() // 3)
             y_draw = y - lift
             surf.blit(s, (x, y_draw))
             rect = pygame.Rect(x, y_draw, s.get_width(), s.get_height())
@@ -588,6 +661,38 @@ class ExhibitScene:
             s = font.render(text, True, color)
             surf.blit(s, (x, y))
         return x + s.get_width()
+
+    @staticmethod
+    def _draw_white_heart(
+        surf: pygame.Surface, x: int, y: int, line_h: int, width: int,
+    ) -> None:
+        """Vector white-heart pictogram, drawn inline at the same baseline
+        as surrounding glyphs. Two overlapping circles + a triangular
+        bottom point. Outline-only so it reads as the *white* heart
+        rather than a solid red one."""
+        # Center the heart on the line's x-height (approx. 65% of line_h
+        # from the top) so it sits in line with serif lowercase letters.
+        h = int(line_h * 0.62)
+        w = width
+        cx = x + w // 2
+        top = y + int(line_h * 0.18)
+        # Two lobes.
+        lobe_r = max(3, w // 4)
+        left_c = (x + lobe_r + 1, top + lobe_r)
+        right_c = (x + w - lobe_r - 1, top + lobe_r)
+        col = (52, 38, 28)  # ink — visible against the cream paper bg
+        bg = (250, 244, 230)  # paper
+        pygame.draw.circle(surf, bg, left_c, lobe_r)
+        pygame.draw.circle(surf, bg, right_c, lobe_r)
+        bottom = (cx, top + h)
+        pygame.draw.polygon(
+            surf, bg,
+            [(left_c[0] - lobe_r, left_c[1]), (right_c[0] + lobe_r, right_c[1]), bottom],
+        )
+        pygame.draw.circle(surf, col, left_c, lobe_r, 2)
+        pygame.draw.circle(surf, col, right_c, lobe_r, 2)
+        pygame.draw.line(surf, col, (left_c[0] - lobe_r, left_c[1]), bottom, 2)
+        pygame.draw.line(surf, col, (right_c[0] + lobe_r, right_c[1]), bottom, 2)
 
     # ------------------------------------------------------------------
     def _render_citation(
@@ -657,11 +762,30 @@ class ExhibitScene:
         surface.blit(wing_label, (top_bar.left, top_bar.top + 4))
 
         close_hint = self.small_font.render(
-            "Esc / B to close   \u25b6 plays a 30s preview   1\u20139 opens link   "
+            "Esc / B / X to close   \u25b6 plays a 30s preview   1\u20139 opens link   "
             "note refs scroll to Notes   wheel/arrows scroll",
             True, COL_MUTED,
         )
-        surface.blit(close_hint, close_hint.get_rect(topright=(top_bar.right, top_bar.top + 8)))
+        # Keep the hint left of the X close button so they don't overlap.
+        surface.blit(
+            close_hint,
+            close_hint.get_rect(
+                topright=(self.close_rect.left - 12, top_bar.top + 8)
+            ),
+        )
+
+        # X close button — drawn over the panel chrome so it sits above
+        # the scrolled content area and is always visible.
+        cr = self.close_rect
+        pygame.draw.rect(surface, COL_INK, cr, border_radius=6)
+        pygame.draw.line(
+            surface, COL_PAPER,
+            (cr.left + 8, cr.top + 8), (cr.right - 8, cr.bottom - 8), 2,
+        )
+        pygame.draw.line(
+            surface, COL_PAPER,
+            (cr.right - 8, cr.top + 8), (cr.left + 8, cr.bottom - 8), 2,
+        )
 
         pygame.draw.line(
             surface, COL_GOLD_DIM,
@@ -691,18 +815,17 @@ class ExhibitScene:
     # ------------------------------------------------------------------
     def _draw_preview_buttons(self, surface: pygame.Surface) -> None:
         state = audio.preview_state()
-        cur_tid = audio.preview_track_id()
+        cur_id = audio.preview_id()
         elapsed, total = audio.preview_progress()
-        for content_rect, tid in self._preview_anchors:
+        for content_rect, tid, _local, my_id in self._preview_anchors:
             screen_rect = content_rect.move(
                 self.content_rect.left,
                 self.content_rect.top - self.scroll,
             )
-            # Skip drawing if scrolled fully outside the visible content.
             if not screen_rect.colliderect(self.content_rect):
                 continue
 
-            is_active = (cur_tid == tid)
+            is_active = (cur_id == my_id)
             label = "\u25b6  Preview"  # ▶ Preview
             bg = COL_PAPER
             border = self.wing.accent

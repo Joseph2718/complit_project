@@ -47,7 +47,7 @@ class StartScene:
             self.title_font, "REPERFORMANCE", COL_GOLD, tracking=6
         )
         self.subtitle_surf = self.subtitle_font.render(
-            "— a study in second lives —", True, COL_PAPER
+            "— a song is never a fixed object —", True, COL_PAPER
         )
         self.cta_surf = render_tracked(
             self.cta_font, "PRESS ENTER TO BEGIN", COL_INK, tracking=4

@@ -1,8 +1,8 @@
 {
   "Dancing on My Own::Robyn": {
     "source": "deezer",
-    "deezer_track_id": 821100262,
-    "matched_title": "Dancing On My Own",
+    "deezer_track_id": 1762991477,
+    "matched_title": "Dancing On My Own (Radio Edit)",
     "matched_artist": "Robyn"
   },
   "Dancing on My Own::Calum Scott": {
@@ -27,7 +27,8 @@
     "source": "deezer",
     "deezer_track_id": 71519881,
     "matched_title": "Wake Me Up (Acoustic)",
-    "matched_artist": "Aloe Blacc"
+    "matched_artist": "Aloe Blacc",
+    "note": "Manually pinned: the credited duo's acoustic recording is filed on Deezer under Aloe Blacc alone."
   },
   "Wake Me Up::Avicii": {
     "source": "deezer",
@@ -35,34 +36,74 @@
     "matched_title": "Wake Me Up",
     "matched_artist": "Avicii"
   },
-  "I Will Survive::Gloria Gaynor": {
+  "Take Me to Church::Hozier": {
     "source": "deezer",
-    "deezer_track_id": 975366,
-    "matched_title": "I Will Survive (Rerecorded)",
-    "matched_artist": "Gloria Gaynor"
+    "deezer_track_id": 72690686,
+    "matched_title": "Take Me to Church",
+    "matched_artist": "Hozier"
   },
-  "I Will Survive::LGBTQ+ communities during the AIDS crisis": {
-    "source": null,
-    "skipped": true
-  },
-  "Born in the U.S.A.::Bruce Springsteen": {
+  "Take Me to Church::Demi Lovato": {
     "source": "deezer",
-    "deezer_track_id": 15586213,
-    "matched_title": "Born in the U.S.A.",
-    "matched_artist": "Bruce Springsteen"
+    "deezer_track_id": 72690686,
+    "matched_title": "Take Me to Church",
+    "matched_artist": "Hozier",
+    "substitute": "original",
+    "note": "Demi Lovato's BBC Radio 1 Live Lounge cover was never released to streaming. The preview button plays Hozier's original studio recording so the player can still hear the lyrics; the YouTube link above the button opens the actual cover."
   },
-  "Born in the U.S.A.::U.S. political rallies & ad campaigns": {
-    "source": null,
-    "skipped": true
-  },
-  "Dreams::Fleetwood Mac": {
+  "Jolene::Dolly Parton": {
     "source": "deezer",
-    "deezer_track_id": 63480987,
-    "matched_title": "Dreams (2004 Remaster)",
-    "matched_artist": "Fleetwood Mac"
+    "deezer_track_id": 114422238,
+    "matched_title": "Jolene",
+    "matched_artist": "Dolly Parton"
   },
-  "Dreams::Nathan Apodaca ('Doggface208')": {
-    "source": null,
-    "skipped": true
+  "Jolene::Lil Nas X": {
+    "source": "deezer",
+    "deezer_track_id": 114422238,
+    "matched_title": "Jolene",
+    "matched_artist": "Dolly Parton",
+    "substitute": "original",
+    "note": "Lil Nas X's BBC Radio 1 Live Lounge cover is not on Deezer. The preview button plays Dolly Parton's original; click the YouTube link above the button to hear the cover."
+  },
+  "Paris::The Chainsmokers": {
+    "source": "deezer",
+    "deezer_track_id": 139904165,
+    "matched_title": "Paris",
+    "matched_artist": "The Chainsmokers"
+  },
+  "Paris::TikTok / overturning of Roe v. Wade": {
+    "source": "deezer",
+    "deezer_track_id": 139904165,
+    "matched_title": "Paris",
+    "matched_artist": "The Chainsmokers",
+    "substitute": "same_audio",
+    "note": "This reperformance has no second performer. The TikTok responses use the same Chainsmokers studio audio; the preview is identical to the Original Performance preview by design."
+  },
+  "True Colors::Cyndi Lauper": {
+    "source": "deezer",
+    "deezer_track_id": 608820,
+    "matched_title": "True Colors",
+    "matched_artist": "Cyndi Lauper"
+  },
+  "True Colors::LGBTQ+ communities & Lauper's later activism": {
+    "source": "deezer",
+    "deezer_track_id": 608820,
+    "matched_title": "True Colors",
+    "matched_artist": "Cyndi Lauper",
+    "substitute": "same_audio",
+    "note": "The 'reperformance' here is the song's adoption as an LGBTQ+ anthem (and Lauper's continued advocacy via the True Colors Fund). The audio is the same 1986 recording; the preview plays it."
+  },
+  "drivers license::Olivia Rodrigo": {
+    "source": "deezer",
+    "deezer_track_id": 1378342592,
+    "matched_title": "drivers license",
+    "matched_artist": "Olivia Rodrigo"
+  },
+  "drivers license::Rick Astley": {
+    "source": "deezer",
+    "deezer_track_id": 1378342592,
+    "matched_title": "drivers license",
+    "matched_artist": "Olivia Rodrigo",
+    "substitute": "original",
+    "note": "Rick Astley's BBC Radio 2 Piano Room performance is not released to streaming. The preview button plays Olivia Rodrigo's original; the YouTube link above opens the actual Astley cover."
   }
 }

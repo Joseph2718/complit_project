@@ -131,7 +131,7 @@ LPC_B = _lpc_chars("sprites/npcs/lpc_set_b.png")
 LPC_C = _lpc_chars("sprites/npcs/lpc_set_c.png")
 
 # Curated museum-appropriate NPC pool.
-# Only plain-clothes civilian LPC characters — no armour, weapons, or fantasy gear.
+# Only plain-clothes civilian LPC characters — no armor, weapons, or fantasy gear.
 GENERIC_NPCS = [
     LPC_A[0],   # dark hair, casual shirt — contemporary male
     LPC_A[1],   # blonde woman in blue dress
