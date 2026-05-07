@@ -1,6 +1,6 @@
 """Exhibit detail overlay.
 
-Pushed on top of the wing scene. Renders a museum-style catalogue entry:
+Pushed on top of the wing scene. Renders a museum-style catalog entry:
 header with cover art, summary blocks for the original performance and
 reperformance(s), the long-form analysis essay broken into sections (with
 embedded frame images), and a *Notes* section at the end in a simplified

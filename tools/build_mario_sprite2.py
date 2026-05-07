@@ -56,7 +56,7 @@ def bbox_sprites_in_band(img, y0: int, y1: int, count: int):
 
 
 def extract_sprite(img, x0: int, y0: int, x1: int, y1: int) -> pygame.Surface:
-    """Crop the bounding-box sprite, knock out white, centre on a CELL×CELL canvas."""
+    """Crop the bounding-box sprite, knock out white, center on a CELL×CELL canvas."""
     w, h = x1 - x0 + 1, y1 - y0 + 1
     raw = pygame.Surface((w, h), pygame.SRCALPHA)
     raw.fill((0, 0, 0, 0))

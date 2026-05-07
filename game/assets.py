@@ -18,7 +18,7 @@ _fonts: Dict[tuple, pygame.font.Font] = {}
 _images: Dict[str, pygame.Surface] = {}
 
 # Single-family typographic system: Cormorant Garamond at several weights.
-# A unified serif gives the game a museum-catalogue feel; pygame cannot
+# A unified serif gives the game a museum-catalog feel; pygame cannot
 # pick weights from a variable font, so we use the Roman face for Regular
 # and SemiBold (bold=True), and the Italic face for italics.
 FONT_ROMAN = os.path.join(FONTS_DIR, "CormorantGaramond-VF.ttf")

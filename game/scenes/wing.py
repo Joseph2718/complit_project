@@ -43,7 +43,6 @@ FRAME_H = 240
 WING_BACKDROPS: dict = {
     "wing_i": "backdrops/wing_same_lyrics.png",
     "wing_ii": "backdrops/wing_reclaimed.png",
-    "wing_iii": "backdrops/wing_viral.png",
 }
 
 

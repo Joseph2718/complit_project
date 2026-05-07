@@ -10,7 +10,7 @@ import urllib.parse
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
-from .constants import COL_WING_I, COL_WING_II, COL_WING_III
+from .constants import COL_WING_I, COL_WING_II
 
 
 # ---------------------------------------------------------------------------
@@ -1533,62 +1533,6 @@ WING_II = Wing(
         # Wing II's prior exhibits (I Will Survive, Born in the U.S.A.,
         # Dreams) were retired when the final analyses landed; the new
         # set above (Paris, True Colors, drivers license) replaces them.
-    ),
-)
-
-
-# ---------------------------------------------------------------------------
-# Wing III — Viral Reperformance (reserved, disabled).
-# Wing III ("Viral Reperformance") extends the argument into the algorithmic
-# era: a song that didn't change at all, but whose surrounding context did.
-# ---------------------------------------------------------------------------
-WING_III = Wing(
-    key="wing_iii",
-    title="Wing III",
-    subtitle="Viral Reperformance",
-    thesis=(
-        "On TikTok, a song is a caption. On streaming, a catalog cut can "
-        "be revived by a single scene. Here a recording does not change, "
-        "but its neighbors do."
-    ),
-    accent=COL_WING_III,
-    exhibits=(
-        Exhibit(
-            song="Running Up That Hill",
-            art_key="running_up_that_hill",
-            original=Performance(
-                performer="Kate Bush",
-                year="1985",
-                setting="Hounds of Love. A synth-driven prayer for empathy between partners.",
-                register="Fervent, art-pop, mystical.",
-                media=(
-                    MediaLink(
-                        "Kate Bush — Running Up That Hill (1985)",
-                        youtube_search("Kate Bush Running Up That Hill 1985 official"),
-                    ),
-                ),
-            ),
-            reperformances=(
-                Performance(
-                    performer="Stranger Things, Season 4",
-                    year="2022",
-                    setting="A Netflix sequence in which the song pulls a character back from the underworld.",
-                    register="Rescue anthem. For a new audience, the song's primary context.",
-                    media=(
-                        MediaLink(
-                            "Kate Bush back in the charts (coverage)",
-                            youtube_search("Kate Bush Running Up That Hill Stranger Things chart"),
-                            kind="article",
-                        ),
-                    ),
-                ),
-            ),
-            curator_note=(
-                "The song reached number one thirty-seven years after release. For "
-                "many Gen Z listeners, it now cites Stranger Things before it cites "
-                "1985. The soundtrack cue became the 'original' context."
-            ),
-        ),
     ),
 )
 

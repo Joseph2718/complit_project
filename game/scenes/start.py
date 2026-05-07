@@ -22,9 +22,9 @@ from ..constants import (
     COL_PAPER,
     COL_WALL,
     COL_WALL_SHADOW,
+    COL_READING,
     COL_WING_I,
     COL_WING_II,
-    COL_WING_III,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
 )
@@ -160,7 +160,7 @@ class StartScene:
         arch_rect = pygame.Rect(x, y, w, h)
         pygame.draw.rect(surface, (58, 48, 38), arch_rect, border_radius=w // 2)
         # inner halo — tinted by wing accent
-        tints = [COL_WING_I, COL_WING_II, COL_WING_III]
+        tints = [COL_WING_I, COL_READING, COL_WING_II]
         inner = pygame.Rect(x + 16, y + 16, w - 32, h - 16)
         pygame.draw.rect(surface, tints[idx], inner, border_radius=(w - 32) // 2)
         shade = pygame.Surface(inner.size, pygame.SRCALPHA)

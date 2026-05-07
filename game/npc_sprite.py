@@ -107,7 +107,7 @@ def render(
 
 
 # ---------------------------------------------------------------------
-# Pre-defined NPC sprite catalogue
+# Pre-defined NPC sprite catalog
 # ---------------------------------------------------------------------
 
 # Each LPC sheet is 12x8 cells; 8 characters per sheet arranged as
@@ -143,7 +143,7 @@ GENERIC_NPCS = [
     LPC_C[0],   # dark hair casual male
     LPC_C[1],   # dark hair casual variant
     LPC_C[2],   # orange-hair with braid — casual female
-    LPC_C[4],   # grey-hair older — senior museum visitor
+    LPC_C[4],   # gray-hair older — senior museum visitor
 ]
 
 # High-res Mario from the RPG Maker sprite sheet (single-character, 80×80 cells).

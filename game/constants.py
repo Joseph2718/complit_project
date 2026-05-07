@@ -27,9 +27,7 @@ COL_ACCENT_DEFAULT = (180, 160, 120)
 # Wing accent colors — each wing dresses its room with one.
 COL_WING_I = (46, 96, 112)          # deep teal — oppositional register
 COL_WING_II = (176, 92, 48)         # burnt ochre — reclaimed
-COL_WING_III = (128, 48, 70)        # dim burgundy — viral
-COL_READING = (130, 38, 46)         # deep crimson — Reading Room (matches the
-                                    # central red doorway in the lobby art)
+COL_READING = (130, 38, 46)         # deep crimson — Reading Room
 
 # Scene IDs
 SCENE_START = "start"
